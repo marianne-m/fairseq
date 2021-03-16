@@ -173,4 +173,10 @@ class FileAudioDataset(RawAudioDataset):
         wav, curr_sample_rate = sf.read(fname)
         feats = torch.from_numpy(wav).float()
         feats = self.postprocess(feats, curr_sample_rate)
-        return {"id": index, "source": feats}
+        #Marianne : TODO add speaker field and fname
+        return {
+            "id": index, 
+            "source": feats, 
+            "fname": fname, 
+            "speaker_id": [f for f in self.fnames[0].split('/')][-3] if len([f for f in self.fnames[0].split('/')])>3 else 'id'
+            }
