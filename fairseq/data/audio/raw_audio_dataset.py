@@ -103,7 +103,10 @@ class RawAudioDataset(FairseqDataset):
         input = {"source": collated_sources}
         if self.pad:
             input["padding_mask"] = padding_mask
-        return {"id": torch.LongTensor([s["id"] for s in samples]), "net_input": input}
+        return {"id": torch.LongTensor([s["id"] for s in samples]), 
+                "net_input": input, 
+                "fname": [s["fname"] for s in samples],
+                "speaker_id": [s["speaker_id"] for s in samples]}
 
     def num_tokens(self, index):
         return self.size(index)
@@ -178,5 +181,5 @@ class FileAudioDataset(RawAudioDataset):
             "id": index, 
             "source": feats, 
             "fname": fname, 
-            "speaker_id": [f for f in self.fnames[0].split('/')][-3] if len([f for f in self.fnames[0].split('/')])>3 else 'id'
+            "speaker_id": [f for f in self.fnames[0].split('/') if 'id' in f][0]
             }
