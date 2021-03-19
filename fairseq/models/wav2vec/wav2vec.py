@@ -295,7 +295,7 @@ class Wav2VecModel(BaseFairseqModel):
         elif cfg.project_features == "new":
             self.project_features, _ = make_aggregator()
 
-    def forward(self, source):
+    def forward(self, source, speaker_id):
         result = {}
 
         features = self.feature_extractor(source)

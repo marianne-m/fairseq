@@ -49,7 +49,7 @@ class Wav2vecCriterion(FairseqCriterion):
         2) the sample size, which is used as the denominator for the gradient
         3) logging outputs to display while training
         """
-        net_output = model(**sample["net_input"])
+        net_output = model(**sample["net_input"], sample["speaker_id"])
         logits = model.get_logits(net_output).float()
         target = model.get_targets(sample, net_output)
 
