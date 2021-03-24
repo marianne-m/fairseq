@@ -50,7 +50,10 @@ class Wav2VecConfig(FairseqDataclass):
         default=0, metadata={"help": "num of cross sampled negatives"}
     )
     num_negatives: int = field(
-        default=10, metadata={"help": "num of cross sampled negatives"}
+        default=10, metadata={"help": "num of negatives"}
+    )
+    different_negatives: int = field(
+    default=0, metadata={"help": "num of different negatives"}
     )
     conv_feature_layers: str = field(
         default="[(512, 10, 5), (512, 8, 4), (512, 4, 2), (512, 4, 2), (512, 4, 2), (512, 1, 1), (512, 1, 1), (512, 1, 1)]",
@@ -278,6 +281,7 @@ class Wav2VecModel(BaseFairseqModel):
             prediction_steps=cfg.prediction_steps,
             n_negatives=cfg.num_negatives,
             cross_sample_negatives=cfg.cross_sample_negatives,
+            different_negatives=cfg.different_negatives,
             sample_distance=cfg.sample_distance,
             dropout=cfg.dropout,
             offset=offset,
@@ -494,6 +498,7 @@ class Wav2VecPredictionsModel(nn.Module):
         prediction_steps,
         n_negatives,
         cross_sample_negatives,
+        different_negatives,
         sample_distance,
         dropout,
         offset,
@@ -504,6 +509,7 @@ class Wav2VecPredictionsModel(nn.Module):
 
         self.n_negatives = n_negatives
         self.cross_sample_negatives = cross_sample_negatives
+        self.different_negatives = different_negatives
         self.sample_distance = sample_distance
         self.project_to_steps = nn.ConvTranspose2d(
             in_dim, out_dim, (1, prediction_steps)
@@ -556,23 +562,21 @@ class Wav2VecPredictionsModel(nn.Module):
                 cross_neg_idxs[cross_neg_idxs >= tszs] += 1
 
 
-            #Marianne : TODO different negatives
-            different_negatives = 5
-            if different_negatives > 0:
+            if self.different_negatives > 0:
                 if bsz < 2:
-                    logger.info("Batch size is 1, impossible to sample negatives from the batch")
-                    different_negatives = 0
+                    logger.info("Batch size is 1, impossible to sample negatives from different samples in the batch")
+                    self.different_negatives = 0
                 else:
                     tszs = (
                         torch.arange(start=0 , end=cross_high, step=tsz)
                         .unsqueeze(-1)
-                        .expand(-1,different_negatives*tsz)
+                        .expand(-1,self.different_negatives*tsz)
                     )
 
                     diff_neg_idxs = torch.randint(
                         low=0,
                         high=cross_high - tsz,
-                        size=(bsz, different_negatives * tsz),
+                        size=(bsz, self.different_negatives * tsz),
                     )
                     diff_neg_idxs[diff_neg_idxs >= tszs] += tsz
 
@@ -585,20 +589,28 @@ class Wav2VecPredictionsModel(nn.Module):
         else:
             neg_idxs = cross_neg_idxs
 
-        if self.cross_sample_negatives > 0 and self.n_negatives > 0 and different_negatives == 0:
+        if self.cross_sample_negatives > 0 and self.n_negatives > 0 and self.different_negatives == 0:
             neg_idxs = torch.cat([neg_idxs, cross_neg_idxs], dim=1)
 
-        if self.cross_sample_negatives > 0 and self.n_negatives > 0 and different_negatives > 0:
+        if self.cross_sample_negatives > 0 and self.n_negatives > 0 and self.different_negatives > 0:
             neg_idxs = torch.cat([neg_idxs, cross_neg_idxs, diff_neg_idxs], dim=1)
 
         negs = y[..., neg_idxs.view(-1)]
         negs = negs.view(
-            fsz, bsz, self.n_negatives + self.cross_sample_negatives + different_negatives, tsz
+            fsz, bsz, self.n_negatives + self.cross_sample_negatives + self.different_negatives, tsz
         ).permute(
             2, 1, 0, 3
         )  # to NxBxCxT
 
-
+        # import csv
+        # with open('samples.csv', 'w') as file:
+        #     writer = csv.writer(file)
+        #     writer.writerow([bsz, fsz, tsz])
+        #     for s in neg_idxs:
+        #         t = [int(i) for i in s]
+        #         writer.writerow(t)
+        print(self.different_negatives)
+        exit()
         return negs
 
     def forward(self, x, y):
