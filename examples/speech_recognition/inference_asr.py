@@ -94,7 +94,6 @@ def main(args):
     hypothesis = list()
 
     for sample in itr:
-        n+=1
         sample = utils.move_to_cuda(sample) if use_cuda else sample
         target_phrase = [tgt_dict[i] for i in sample['target'][0]]
 
