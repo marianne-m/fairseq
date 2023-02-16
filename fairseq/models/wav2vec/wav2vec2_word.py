@@ -117,8 +117,6 @@ class Wav2Vec2Word(Wav2Vec2Model):
             with torch.no_grad():
                 features = self.feature_extractor(source)
 
-        features = features.detach()
-
         features_pen = features.float().pow(2).mean()
 
         features = features.transpose(1, 2)
@@ -206,12 +204,12 @@ class Wav2Vec2Word(Wav2Vec2Model):
             if self.negatives_from_everywhere:
                 q = self.quantizer(unmasked_features, produce_targets=False)
                 y = q["x"]
-                y = y.detach()
                 num_vars = q["num_vars"]
                 code_ppl = q["code_perplexity"]
                 prob_ppl = q["prob_perplexity"]
                 curr_temp = q["temp"]
                 y = self.project_q(y)
+                y = y.detach()
 
                 negs, _ = self.sample_negatives(
                     y,
@@ -229,6 +227,7 @@ class Wav2Vec2Word(Wav2Vec2Model):
                 curr_temp = q["temp"]
 
                 y = self.project_q(y)
+                y = y.detach()
 
                 negs, _ = self.sample_negatives(
                     y,
