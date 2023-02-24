@@ -8,6 +8,7 @@ import logging
 import os
 import sys
 from typing import Any, List, Optional, Union
+from collections import defaultdict
 
 import numpy as np
 
@@ -73,6 +74,20 @@ def load_label_offset(label_path, inds, tot):
     return offsets
 
 
+def load_boundaries(bound_path, inds, tot) -> defaultdict:
+    boundaries = defaultdict(list)
+    with open(bound_path) as f:
+        for line in f:
+            name, start, end, _ = line.rstrip().split(' ')
+            boundaries[name].append([float(start), float(end)])
+        boundaries = list(boundaries.values())
+        assert (
+            len(boundaries) == tot
+        ), f"number of labels does not match ({len(boundaries)} != {tot})"
+        boundaries = [boundaries[i] for i in inds]
+    return boundaries
+
+
 def verify_label_lengths(
     audio_sizes,
     audio_rate,
@@ -132,7 +147,7 @@ class HubertDataset(FairseqDataset):
         random_crop: bool = False,
         single_target: bool = False,
     ):
-        self.audio_root, self.audio_names, inds, tot, self.sizes = load_audio(
+        self.audio_root, self.audio_names, self.inds, self.tot, self.sizes = load_audio(
             manifest_path, max_keep_sample_size, min_keep_sample_size
         )
         self.sample_rate = sample_rate
@@ -151,16 +166,16 @@ class HubertDataset(FairseqDataset):
         )
         self.store_labels = store_labels
         if store_labels:
-            self.label_list = [load_label(p, inds, tot) for p in label_paths]
+            self.label_list = [load_label(p, self.inds, self.tot) for p in label_paths]
         else:
             self.label_paths = label_paths
             self.label_offsets_list = [
-                load_label_offset(p, inds, tot) for p in label_paths
+                load_label_offset(p, self.inds, self.tot) for p in label_paths
             ]
         assert label_processors is None or len(label_processors) == self.num_labels
         for label_path, label_rate in zip(label_paths, self.label_rates):
             verify_label_lengths(
-                self.sizes, sample_rate, label_path, label_rate, inds, tot
+                self.sizes, sample_rate, label_path, label_rate, self.inds, self.tot
             )
 
         self.max_sample_size = (
@@ -354,3 +369,55 @@ class HubertDataset(FairseqDataset):
             with torch.no_grad():
                 wav = F.layer_norm(wav, wav.shape)
         return wav
+
+
+class HubertDatasetWB(HubertDataset):
+    def __init__(
+        self,
+        manifest_path: str,
+        sample_rate: float,
+        label_paths: List[str],
+        label_rates: Union[List[float], float],  # -1 for sequence labels
+        pad_list: List[str],
+        eos_list: List[str],
+        label_processors: Optional[List[Any]] = None,
+        max_keep_sample_size: Optional[int] = None,
+        min_keep_sample_size: Optional[int] = None,
+        max_sample_size: Optional[int] = None,
+        shuffle: bool = True,
+        pad_audio: bool = False,
+        normalize: bool = False,
+        store_labels: bool = True,
+        random_crop: bool = False,
+        single_target: bool = False,
+    ) -> None:
+        super().__init__(
+            manifest_path,
+            sample_rate,
+            label_paths,
+            label_rates,
+            pad_list,
+            eos_list,
+            label_processors,
+            max_keep_sample_size,
+            min_keep_sample_size,
+            max_sample_size,
+            shuffle,
+            pad_audio,
+            normalize,
+            store_labels,
+            random_crop,
+            single_target,
+        )
+        subset = os.path.basename(manifest_path)
+        self.bound_manifest_dir = os.path.join(os.path.dirname(manifest_path), 'bound_' + subset)
+        self.boundaries_list = load_boundaries(self.bound_manifest_dir, self.inds, self.tot)
+
+    def get_boundaries(self, index):
+        return self.boundaries_list[index]
+
+    def __getitem__(self, index):
+        wav = self.get_audio(index)
+        labels = self.get_labels(index)
+        boundaries = self.get_boundaries(index)
+        return {"id": index, "source": wav, "label_list": labels, "boundaries": boundaries}
