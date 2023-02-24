@@ -13,7 +13,7 @@ from typing import Dict, List, Optional, Tuple
 import numpy as np
 
 from dataclasses import dataclass, field
-from fairseq.data import Dictionary, HubertDataset
+from fairseq.data import Dictionary, HubertDataset, HubertDatasetWB
 from fairseq.dataclass.configs import FairseqDataclass
 from fairseq.tasks import register_task
 from fairseq.tasks.fairseq_task import FairseqTask
@@ -189,3 +189,36 @@ class HubertPretrainingTask(FairseqTask):
 
     def filter_indices_by_size(self, indices: np.array, *args, **kwargs) -> np.array:
         return indices
+
+
+@register_task("hubert_pretraining_wb", dataclass=HubertPretrainingConfig)
+class HubertPretrainingTaskWB(HubertPretrainingTask):
+    cfg: HubertPretrainingConfig
+
+    def load_dataset(self, split: str, **kwargs) -> None:
+        manifest = f"{self.cfg.data}/{split}.tsv"
+        dicts = [self.target_dictionary] if self.cfg.fine_tuning else self.dictionaries
+        pad_list = [dict.pad() for dict in dicts]
+        eos_list = [dict.eos() for dict in dicts]
+        procs = [LabelEncoder(dict) for dict in dicts]
+        paths = [f"{self.get_label_dir()}/{split}.{l}" for l in self.cfg.labels]
+
+        # hubert v1: pad_audio=True, random_crop=False;
+        self.datasets[split] = HubertDatasetWB(
+            manifest,
+            sample_rate=self.cfg.sample_rate,
+            label_paths=paths,
+            label_rates=self.cfg.label_rate,
+            pad_list=pad_list,
+            eos_list=eos_list,
+            label_processors=procs,
+            max_keep_sample_size=self.cfg.max_keep_size,
+            min_keep_sample_size=self.cfg.min_sample_size,
+            max_sample_size=self.cfg.max_sample_size,
+            pad_audio=self.cfg.pad_audio,
+            normalize=self.cfg.normalize,
+            store_labels=False,
+            random_crop=self.cfg.random_crop,
+            single_target=self.cfg.single_target,
+        )
+
