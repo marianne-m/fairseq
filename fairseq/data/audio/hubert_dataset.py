@@ -93,7 +93,6 @@ def load_boundaries(bound_path: List, stems: List, inds: List, tot: int) -> defa
         logger.info(f"Keeping only {len(inds)} files")
 
     boundaries = [boundaries[i] for i in inds]
-    ind_name = [ind_name[i] for i in inds]
     return boundaries, inds
 
 
