@@ -9,6 +9,7 @@ import os
 import sys
 from typing import Any, List, Optional, Union
 from collections import defaultdict
+from pathlib import Path
 
 import numpy as np
 
@@ -74,18 +75,26 @@ def load_label_offset(label_path, inds, tot):
     return offsets
 
 
-def load_boundaries(bound_path, inds, tot) -> defaultdict:
+def load_boundaries(bound_path: List, stems: List, inds: List, tot: int) -> defaultdict:
     boundaries = defaultdict(list)
     with open(bound_path) as f:
         for line in f:
             name, start, end, _ = line.rstrip().split(' ')
-            boundaries[name].append([float(start), float(end)])
-        boundaries = list(boundaries.values())
-        assert (
-            len(boundaries) == tot
-        ), f"number of labels does not match ({len(boundaries)} != {tot})"
-        boundaries = [boundaries[i] for i in inds]
-    return boundaries
+            if name in stems:
+                ind = stems.index(name)
+            else:
+                ind = -1
+            boundaries[ind].append([float(start), float(end)])
+
+    if len(boundaries) != tot:
+        logger.info(f"Number of word boundaries files does not match with "
+                    f"number of audio files ({len(boundaries)} != {tot})")
+        inds = list(set(inds).intersection(set(boundaries.keys())))
+        logger.info(f"Keeping only {len(inds)} files")
+
+    boundaries = [boundaries[i] for i in inds]
+    ind_name = [ind_name[i] for i in inds]
+    return boundaries, inds
 
 
 def verify_label_lengths(
@@ -411,7 +420,8 @@ class HubertDatasetWB(HubertDataset):
         )
         subset = os.path.basename(manifest_path)
         self.bound_manifest_dir = os.path.join(os.path.dirname(manifest_path), 'bound_' + subset)
-        self.boundaries_list = load_boundaries(self.bound_manifest_dir, self.inds, self.tot)
+        names = [Path(name).stem for name in self.audio_names]
+        self.boundaries_list, self.inds = load_boundaries(self.bound_manifest_dir, names, self.inds, self.tot)
 
     def get_boundaries(self, index):
         return self.boundaries_list[index]
