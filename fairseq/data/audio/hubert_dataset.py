@@ -399,28 +399,52 @@ class HubertDatasetWB(HubertDataset):
         random_crop: bool = False,
         single_target: bool = False,
     ) -> None:
-        super().__init__(
-            manifest_path,
-            sample_rate,
-            label_paths,
-            label_rates,
-            pad_list,
-            eos_list,
-            label_processors,
-            max_keep_sample_size,
-            min_keep_sample_size,
-            max_sample_size,
-            shuffle,
-            pad_audio,
-            normalize,
-            store_labels,
-            random_crop,
-            single_target,
+
+        self.audio_root, self.audio_names, self.inds, self.tot, self.sizes = load_audio(
+            manifest_path, max_keep_sample_size, min_keep_sample_size
         )
+        self.sample_rate = sample_rate
+        self.shuffle = shuffle
+        self.random_crop = random_crop
+
         subset = os.path.basename(manifest_path)
         self.bound_manifest_dir = os.path.join(os.path.dirname(manifest_path), 'bound_' + subset)
         names = [Path(name).stem for name in self.audio_names]
         self.boundaries_list, self.inds = load_boundaries(self.bound_manifest_dir, names, self.inds, self.tot)
+
+        self.num_labels = len(label_paths)
+        self.pad_list = pad_list
+        self.eos_list = eos_list
+        self.label_processors = label_processors
+        self.single_target = single_target
+        self.label_rates = (
+            [label_rates for _ in range(len(label_paths))]
+            if isinstance(label_rates, float)
+            else label_rates
+        )
+        self.store_labels = store_labels
+        if store_labels:
+            self.label_list = [load_label(p, self.inds, self.tot) for p in label_paths]
+        else:
+            self.label_paths = label_paths
+            self.label_offsets_list = [
+                load_label_offset(p, self.inds, self.tot) for p in label_paths
+            ]
+        assert label_processors is None or len(label_processors) == self.num_labels
+        for label_path, label_rate in zip(label_paths, self.label_rates):
+            verify_label_lengths(
+                self.sizes, sample_rate, label_path, label_rate, self.inds, self.tot
+            )
+
+        self.max_sample_size = (
+            max_sample_size if max_sample_size is not None else sys.maxsize
+        )
+        self.pad_audio = pad_audio
+        self.normalize = normalize
+        logger.info(
+            f"pad_audio={pad_audio}, random_crop={random_crop}, "
+            f"normalize={normalize}, max_sample_size={self.max_sample_size}"
+        )
 
     def get_boundaries(self, index):
         return self.boundaries_list[index]
