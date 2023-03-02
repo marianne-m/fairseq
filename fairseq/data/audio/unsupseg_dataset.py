@@ -10,43 +10,41 @@ from typing import List, Tuple, Optional, Any, Union
 import numpy as np
 import torchaudio
 import torch
+from collections import defaultdict
+from pathlib import Path
 from fairseq.data.fairseq_dataset import FairseqDataset
+
 logger = logging.getLogger(__name__)
 
 
-def load_boundaries(manifest_path, feat_sr, max_sentence_length):
-    labels = {}
+def load_boundaries(manifest_path, max_sentence_length):
+    labels = defaultdict(list)
     with open(manifest_path) as buf:
         for line in buf:
             try:
-                sid, start, end = line.rstrip().split(' ')[:3]
+                sid, start, end, _ = line.rstrip().split()
             except:
                 print(manifest_path, line)
                 sys.exit()
+
             start, end = float(start), float(end)
             if end > max_sentence_length:
                 continue
-            # start,end=np.around((feat_sr*start,feat_sr*end),0)
-            if sid not in labels:
-                labels[sid] = []
             labels[sid].append((start, end))
-            # labels[sid].append((int(start),int(end)))
     return labels
 
 
-def load_sentences(manifest_path, non_speech=False, boundaries=None):
-    nb_sentences = 0
-    paths = {}
+def load_sentences(manifest_path, boundaries=None):
+    paths = dict()
     with open(manifest_path) as buf:
-        for line in buf:
+        for index, line in enumerate(buf):
             path = line.rstrip()
-            sid = path.split('/')[7].split('.')[0]
-            if sid not in boundaries:
-                continue
-            paths[nb_sentences] = (path, sid)
-            nb_sentences += 1
+            sid = Path(path).stem
+            if sid in boundaries:
+                paths[index] = (path, sid)
+
     logger.info((
-        f"nb_sentences={nb_sentences} "
+        f"{len(paths)} sentences were loaded."
     ))
     return paths
 
@@ -56,33 +54,36 @@ class UnsupsegDataset(FairseqDataset):
         self,
         manifest_path: str,  # file with path to word embeddings npz
         cfg: dict,
+        sample_rate: float,
+        label_rate: float,
+        max_sentence_length: int = 20, # seconds
     ):
-        self.max_sentence_length = 20  # seconds
-        self.feat_sr = 50
-        self.sr = 16000
-        self.max_wav_length = self.max_sentence_length*self.sr
+        self.max_sentence_length = max_sentence_length
+        self.label_rate = label_rate
+        self.sample_rate = sample_rate
+        self.max_wav_length = self.max_sentence_length * self.sample_rate
+        
         logger.info('Reading boundaries')
-
         dir_manifest_path = os.path.dirname(manifest_path)
         subset = os.path.basename(manifest_path)
         bound_manifest_path = os.path.join(dir_manifest_path, 'bound_'+subset)
-        self.boundaries = load_boundaries(bound_manifest_path, self.feat_sr, self.max_sentence_length)
+        self.boundaries = load_boundaries(bound_manifest_path, self.max_sentence_length)
 
         logger.info('Reading sentences')
         self.paths = load_sentences(manifest_path, boundaries=self.boundaries)
-        self.slowest = 1.0
-        self.src_info = {"rate": self.sr}
-        self.target_info = {"channels": 1, "length": 0, "rate": self.sr}
+        self.src_info = {"rate": self.sample_rate}
+        self.target_info = {"channels": 1, "length": 0, "rate": self.sample_rate}
 
     def __getitem__(self, index):
         path, sid = self.paths[index]
         boundaries = self.boundaries[sid]
-        source, sr = torchaudio.load(path)
-        assert sr == self.sr, sr
+        source, sample_rate = torchaudio.load(path)
+        assert sample_rate == self.sample_rate, sample_rate
+
+        # padding the audio
         source = source.flatten()
-        # extract self.max_frames_sentences from source and labels
         source = source[:int(self.max_wav_length)]
-        padded_source = torch.zeros(int(self.max_wav_length/self.slowest))
+        padded_source = torch.zeros(self.max_wav_length)
         padded_source[:len(source)] = source
         padded_source = padded_source.reshape(1, -1)
         return {"id": index, "source": padded_source, "boundaries": boundaries}
