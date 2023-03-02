@@ -6,7 +6,7 @@
 import logging
 import os
 import sys
-from typing import List, Tuple, Optional, Any, Union
+from typing import List, Dict, Any, Tuple, Optional, Union
 import numpy as np
 import torchaudio
 import torch
@@ -17,7 +17,10 @@ from fairseq.data.fairseq_dataset import FairseqDataset
 logger = logging.getLogger(__name__)
 
 
-def load_boundaries(manifest_path, max_sentence_length):
+def load_boundaries(
+        manifest_path: str,
+        max_sentence_length: int
+) -> Dict[str, Tuple[int, int]]:
     labels = defaultdict(list)
     with open(manifest_path) as buf:
         for line in buf:
@@ -34,14 +37,17 @@ def load_boundaries(manifest_path, max_sentence_length):
     return labels
 
 
-def load_sentences(manifest_path, boundaries=None):
+def load_sentences(
+        manifest_path: str,
+        boundaries: Dict
+) -> Dict[int, Tuple[str, str, int]]:
     paths = dict()
     with open(manifest_path) as buf:
         for index, line in enumerate(buf):
-            path = line.rstrip()
+            path, size = line.rstrip().split("\t")
             sid = Path(path).stem
             if sid in boundaries:
-                paths[index] = (path, sid)
+                paths[index] = (path, sid, size)
 
     logger.info((
         f"{len(paths)} sentences were loaded."
@@ -75,7 +81,7 @@ class UnsupsegDataset(FairseqDataset):
         self.target_info = {"channels": 1, "length": 0, "rate": self.sample_rate}
 
     def __getitem__(self, index):
-        path, sid = self.paths[index]
+        path, sid, _ = self.paths[index]
         boundaries = self.boundaries[sid]
         source, sample_rate = torchaudio.load(path)
         assert sample_rate == self.sample_rate, sample_rate
