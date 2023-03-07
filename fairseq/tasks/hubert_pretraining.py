@@ -13,7 +13,7 @@ from typing import Dict, List, Optional, Tuple
 import numpy as np
 
 from dataclasses import dataclass, field
-from fairseq.data import Dictionary, HubertDataset, HubertDatasetWB
+from fairseq.data import Dictionary, HubertDataset, UnsupsegDataset
 from fairseq.dataclass.configs import FairseqDataclass
 from fairseq.tasks import register_task
 from fairseq.tasks.fairseq_task import FairseqTask
@@ -203,22 +203,9 @@ class HubertPretrainingTaskWB(HubertPretrainingTask):
         procs = [LabelEncoder(dict) for dict in dicts]
         paths = [f"{self.get_label_dir()}/{split}.{l}" for l in self.cfg.labels]
 
-        # hubert v1: pad_audio=True, random_crop=False;
-        self.datasets[split] = HubertDatasetWB(
+        self.datasets[split] = UnsupsegDataset(
             manifest,
             sample_rate=self.cfg.sample_rate,
-            label_paths=paths,
-            label_rates=self.cfg.label_rate,
-            pad_list=pad_list,
-            eos_list=eos_list,
-            label_processors=procs,
-            max_keep_sample_size=self.cfg.max_keep_size,
-            min_keep_sample_size=self.cfg.min_sample_size,
-            max_sample_size=self.cfg.max_sample_size,
-            pad_audio=self.cfg.pad_audio,
-            normalize=self.cfg.normalize,
-            store_labels=False,
-            random_crop=self.cfg.random_crop,
-            single_target=self.cfg.single_target,
+            label_path=paths[0],
+            label_rate=self.cfg.label_rate,
         )
-

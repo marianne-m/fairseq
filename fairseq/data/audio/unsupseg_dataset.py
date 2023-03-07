@@ -42,12 +42,39 @@ def load_sentences(
         boundaries: Dict
 ) -> Dict[int, Tuple[str, str, int]]:
     paths = dict()
+    index = 0
     with open(manifest_path) as buf:
-        for index, line in enumerate(buf):
+        for line in buf:
             path, size = line.rstrip().split("\t")
             sid = Path(path).stem
             if sid in boundaries:
                 paths[index] = (path, sid, size)
+                index += 1
+
+    logger.info((
+        f"{len(paths)} sentences were loaded."
+    ))
+    return paths
+
+
+def load_sentences_and_km_labels(
+        manifest_path: str,
+        label_path: str,
+        boundaries: Dict
+) -> Dict[int, Tuple[str, str, int, str]]:
+    """
+    Loads the path, file id, size, and labels for files already in boundaries
+    """
+    paths = dict()
+    index = 0
+    with open(manifest_path) as dir_path:
+        with open(label_path) as file_labels:
+            for line, label in zip(dir_path, file_labels):
+                path, size = line.rstrip().split("\t")
+                sid = Path(path).stem
+                if sid in boundaries:
+                    paths[index] = (path, sid, size, label)
+                    index += 1
 
     logger.info((
         f"{len(paths)} sentences were loaded."
@@ -59,16 +86,16 @@ class UnsupsegDataset(FairseqDataset):
     def __init__(
         self,
         manifest_path: str,  # file with path to word embeddings npz
-        cfg: dict,
         sample_rate: float,
+        label_path: str,
         label_rate: float,
-        max_sentence_length: int = 20, # seconds
+        max_sentence_length: int = 20,  # seconds
     ):
         self.max_sentence_length = max_sentence_length
         self.label_rate = label_rate
         self.sample_rate = sample_rate
         self.max_wav_length = self.max_sentence_length * self.sample_rate
-        
+
         logger.info('Reading boundaries')
         dir_manifest_path = os.path.dirname(manifest_path)
         subset = os.path.basename(manifest_path)
@@ -76,12 +103,12 @@ class UnsupsegDataset(FairseqDataset):
         self.boundaries = load_boundaries(bound_manifest_path, self.max_sentence_length)
 
         logger.info('Reading sentences')
-        self.paths = load_sentences(manifest_path, boundaries=self.boundaries)
+        self.paths = load_sentences_and_km_labels(manifest_path, label_path, self.boundaries)
         self.src_info = {"rate": self.sample_rate}
         self.target_info = {"channels": 1, "length": 0, "rate": self.sample_rate}
 
     def __getitem__(self, index):
-        path, sid, _ = self.paths[index]
+        path, sid, _, km_label = self.paths[index]
         boundaries = self.boundaries[sid]
         source, sample_rate = torchaudio.load(path)
         assert sample_rate == self.sample_rate, sample_rate
@@ -92,7 +119,12 @@ class UnsupsegDataset(FairseqDataset):
         padded_source = torch.zeros(self.max_wav_length)
         padded_source[:len(source)] = source
         padded_source = padded_source.reshape(1, -1)
-        return {"id": index, "source": padded_source, "boundaries": boundaries}
+        return {
+            "id": index,
+            "source": padded_source,
+            "boundaries": boundaries,
+            "label_list": km_label
+        }
 
     def __len__(self):
         return len(self.paths)
