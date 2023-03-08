@@ -13,6 +13,7 @@ import torch
 from collections import defaultdict
 from pathlib import Path
 from fairseq.data.fairseq_dataset import FairseqDataset
+from fairseq.data import data_utils
 
 logger = logging.getLogger(__name__)
 
@@ -95,6 +96,7 @@ class UnsupsegDataset(FairseqDataset):
         self.label_rate = label_rate
         self.sample_rate = sample_rate
         self.max_wav_length = self.max_sentence_length * self.sample_rate
+        self.max_frames_sentence = int(self.label_rate * self.max_sentence_length)
 
         logger.info('Reading boundaries')
         dir_manifest_path = os.path.dirname(manifest_path)
@@ -108,7 +110,9 @@ class UnsupsegDataset(FairseqDataset):
         self.target_info = {"channels": 1, "length": 0, "rate": self.sample_rate}
 
     def __getitem__(self, index):
-        path, sid, _, km_label = self.paths[index]
+        path, sid, _, labels = self.paths[index]
+
+        labels = torch.tensor([int(label) for label in labels.split()])
         boundaries = self.boundaries[sid]
         source, sample_rate = torchaudio.load(path)
         assert sample_rate == self.sample_rate, sample_rate
@@ -119,11 +123,18 @@ class UnsupsegDataset(FairseqDataset):
         padded_source = torch.zeros(self.max_wav_length)
         padded_source[:len(source)] = source
         padded_source = padded_source.reshape(1, -1)
+
+        # padding the labels
+        labels = labels[:self.max_frames_sentence]
+        padded_labels = torch.zeros(self.max_frames_sentence)
+        padded_labels[:len(labels)] = labels
+        padded_labels = padded_labels.reshape(1, -1)
+
         return {
             "id": index,
             "source": padded_source,
             "boundaries": boundaries,
-            "label_list": km_label
+            "label_list": padded_labels
         }
 
     def __len__(self):
@@ -136,16 +147,22 @@ class UnsupsegDataset(FairseqDataset):
         samples = [s for s in samples if s["source"] is not None]
         if len(samples) == 0:
             return {}
-        sources = [s["source"] for s in samples]
+
+        sources = [s["source"] for s in samples] # = audios
         boundaries = [s["boundaries"] for s in samples]
+        target_list = [s["label_list"] for s in samples]
         ids = torch.LongTensor([s["id"] for s in samples])
+
         net_input = {
             "source": sources,
             "boundaries": boundaries,
         }
         batch = {
             "id": ids,
-            "net_input": net_input
+            "net_input": net_input,
+            # "target_lengths_list": lengths_list,
+            # "ntokens_list": ntokens_list,
+            "target_list": target_list
         }
 
         return batch
