@@ -170,8 +170,6 @@ class UnsupsegDataset(FairseqDataset):
         batch = {
             "id": ids,
             "net_input": net_input,
-            # "target_lengths_list": lengths_list,
-            # "ntokens_list": ntokens_list,
             "target_list": target_list
         }
 
