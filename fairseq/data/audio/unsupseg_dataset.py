@@ -124,6 +124,10 @@ class UnsupsegDataset(FairseqDataset):
         padded_source[:len(source)] = source
         padded_source = padded_source.reshape(1, -1)
 
+        # padding mask
+        padding_mask = torch.BoolTensor(self.max_wav_length)
+        padding_mask[:len(source)] = False
+
         # padding the labels
         labels = labels[:self.max_frames_sentence]
         padded_labels = torch.zeros(self.max_frames_sentence)
@@ -133,6 +137,7 @@ class UnsupsegDataset(FairseqDataset):
         return {
             "id": index,
             "source": padded_source,
+            "padding_mask": padding_mask,
             "boundaries": boundaries,
             "label_list": padded_labels
         }
@@ -148,14 +153,19 @@ class UnsupsegDataset(FairseqDataset):
         if len(samples) == 0:
             return {}
 
-        sources = [s["source"] for s in samples] # = audios
+        sources = ([s["source"] for s in samples]) # = audios
+        sources = torch.stack(sources).squeeze()
+        padding_mask = ([s["padding_mask"] for s in samples])
+        padding_mask = torch.stack(padding_mask).squeeze()
         boundaries = [s["boundaries"] for s in samples]
         target_list = [s["label_list"] for s in samples]
+        target_list = [torch.stack(target_list).squeeze()]
         ids = torch.LongTensor([s["id"] for s in samples])
 
         net_input = {
             "source": sources,
             "boundaries": boundaries,
+            "padding_mask": padding_mask
         }
         batch = {
             "id": ids,
