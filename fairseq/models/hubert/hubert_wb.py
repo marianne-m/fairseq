@@ -78,6 +78,7 @@ class HubertModelWB(HubertModel):
         output_layer: Optional[int] = None,
     ) -> Dict[str, torch.Tensor]:
         """output layer is 1-based"""
+        print("start of forward")
         features = self.forward_features(source)
         if target_list is not None:
             features, target_list = self.forward_targets(features, target_list)
@@ -98,8 +99,8 @@ class HubertModelWB(HubertModel):
         unmasked_features = self.dropout_features(unmasked_features)
 
         if mask:
-            x, mask_indices = self.apply_mask_with_word_boundaries(features, padding_mask, boundaries, target_list)
-            # x, mask_indices = self.apply_mask(features, padding_mask, target_list)
+            # x, mask_indices = self.apply_mask_with_word_boundaries(features, padding_mask, boundaries, target_list)
+            x, mask_indices = self.apply_mask(features, padding_mask, target_list)
         else:
             x = features
             mask_indices = None
