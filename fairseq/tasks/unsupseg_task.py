@@ -13,7 +13,7 @@ from typing import Dict, List, Optional, Tuple
 import numpy as np
 
 from dataclasses import dataclass, field
-from fairseq.data import Dictionary, UnsupsegDataset
+from fairseq.data import Dictionary, UnsupsegDataset, UnsupsegMandarinDataset
 from fairseq.dataclass.configs import FairseqDataclass
 from fairseq.tasks import register_task
 from fairseq.tasks.fairseq_task import FairseqTask
@@ -116,6 +116,9 @@ class UnsupsegConfig(FairseqDataclass):
 
 @register_task("unsupseg", dataclass=UnsupsegConfig)
 class UnsupsegTask(FairseqTask):
+    """
+    Task for finetuning Wav2Vec2
+    """
 
     cfg: UnsupsegConfig
 
@@ -132,7 +135,7 @@ class UnsupsegTask(FairseqTask):
         self.fine_tuning = cfg.fine_tuning
 
         if cfg.fine_tuning:
-            self.state.add_factory("target_dictionary", self.load_dictionaries)
+            self.state.add_factory("target_dictionary", self.load_target_dictionary)
         else:
             self.state.add_factory("dictionaries", self.load_dictionaries)
 
@@ -144,8 +147,7 @@ class UnsupsegTask(FairseqTask):
 
     @property
     def target_dictionary(self) -> Optional[Dictionary]:
-        #return self.state.target_dictionary
-        return None
+        return self.state.target_dictionary
 
     @property
     def dictionaries(self) -> List[Dictionary]:
@@ -162,6 +164,12 @@ class UnsupsegTask(FairseqTask):
         dictionaries = [Dictionary.load(f"{label_dir}/dict.{label}.txt") for label in self.cfg.labels]
         return dictionaries[0] if self.cfg.fine_tuning else dictionaries
 
+    def load_target_dictionary(self):
+        if self.cfg.labels:
+            dict_path = os.path.join(self.cfg.data, f"dict.{self.cfg.labels[0]}.txt")
+            return Dictionary.load(dict_path)
+        return None
+
     def get_label_dir(self) -> str:
         if self.cfg.label_dir is None:
             return self.cfg.data
@@ -169,8 +177,11 @@ class UnsupsegTask(FairseqTask):
 
     def load_dataset(self, split: str, **kwargs) -> None:
         manifest = f"{self.cfg.data}/{split}.tsv"
-        self.datasets[split] = UnsupsegDataset(
-            manifest,self.cfg)
+        paths = [f"{self.get_label_dir()}/{split}.{l}" for l in self.cfg.labels]
+        self.datasets[split] = UnsupsegMandarinDataset(
+            manifest,
+            sample_rate=self.cfg.sample_rate,
+        )
 
     def max_positions(self) -> Tuple[int, int]:
         return (sys.maxsize, sys.maxsize)

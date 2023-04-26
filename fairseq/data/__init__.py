@@ -13,7 +13,7 @@ from .base_wrapper_dataset import BaseWrapperDataset
 from .add_target_dataset import AddTargetDataset
 from .append_token_dataset import AppendTokenDataset
 from .audio.raw_audio_dataset import BinarizedAudioDataset, FileAudioDataset
-from .audio.unsupseg_dataset import UnsupsegDataset
+from .audio.unsupseg_dataset import UnsupsegDataset, UnsupsegMandarinDataset
 from .audio.hubert_dataset import HubertDataset
 from .audio.hubert_dataset_wb import HubertDatasetWB
 from .backtranslation_dataset import BacktranslationDataset
@@ -137,5 +137,6 @@ __all__ = [
     "TransformEosConcatLangPairDataset",
     "TruncateDataset",
     "TruncatedDictionary",
-    "UnsupsegDataset"
+    "UnsupsegDataset",
+    "UnsupsegMandarinDataset"
 ]
