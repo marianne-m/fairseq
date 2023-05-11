@@ -220,9 +220,10 @@ class UnsupsegMandarinDataset(FairseqDataset):
         self.paths = load_sentences(manifest_path, self.boundaries)
         self.src_info = {"rate": self.sample_rate}
         self.target_info = {"channels": 1, "length": 0, "rate": self.sample_rate}
+        self.len_data = len(self.paths)
 
     def __getitem__(self, index):
-        index = np.randint(0)
+        index = np.random.randint(self.len_data)
         path, sid, _ = self.paths[index]
 
         boundaries = self.boundaries[sid]
@@ -263,7 +264,8 @@ class UnsupsegMandarinDataset(FairseqDataset):
         }
 
     def __len__(self):
-        return len(self.paths)
+        # nb de fois où getitem est appelée dans une epoch
+        return 180
 
     def crop_to_max_size(self, wav, target_size):
         return wav, 0
