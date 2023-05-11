@@ -39,6 +39,26 @@ def load_boundaries(
     return labels
 
 
+def load_boundaries_and_transcript(
+        manifest_path: str,
+        max_sentence_length: int = None
+) -> Dict[str, Tuple[int, int]]:
+    labels = defaultdict(list)
+    with open(manifest_path) as buf:
+        for line in buf:
+            try:
+                sid, start, end, transcript = line.rstrip().split()
+            except:
+                print(manifest_path, line)
+                sys.exit()
+
+            start, end = float(start), float(end)
+            if max_sentence_length and end > max_sentence_length:
+                continue
+            labels[sid].append(((start, end), transcript))
+    return labels
+
+
 def load_sentences(
         manifest_path: str,
         boundaries: Dict
@@ -204,7 +224,9 @@ class UnsupsegMandarinDataset(FairseqDataset):
         self,
         manifest_path: str,  # file with path to word embeddings npz
         sample_rate: float,
+        pad,
         max_sentence_length: int = 20,  # seconds
+        process_label = None,
     ):
         self.max_sentence_length = max_sentence_length
         self.sample_rate = sample_rate
@@ -214,13 +236,16 @@ class UnsupsegMandarinDataset(FairseqDataset):
         dir_manifest_path = os.path.dirname(manifest_path)
         subset = os.path.basename(manifest_path)
         bound_manifest_path = os.path.join(dir_manifest_path, 'bound_'+subset)
-        self.boundaries = load_boundaries(bound_manifest_path)
+        self.boundaries = load_boundaries_and_transcript(bound_manifest_path)
 
         logger.info('Reading sentences')
         self.paths = load_sentences(manifest_path, self.boundaries)
         self.src_info = {"rate": self.sample_rate}
         self.target_info = {"channels": 1, "length": 0, "rate": self.sample_rate}
         self.len_data = len(self.paths)
+
+        self.process_label = process_label
+        self.pad = pad
 
     def __getitem__(self, index):
         index = np.random.randint(self.len_data)
@@ -238,13 +263,31 @@ class UnsupsegMandarinDataset(FairseqDataset):
         max_onset = source_len - self.max_wav_length
         retry = 0
         while crop_onset > max_onset:
-            crop_onset = int(choice(boundaries)[0] * sample_rate)
+            onset_index = np.random.randint(len(boundaries))
+            crop_onset_sec = boundaries[onset_index][0][0]
+            crop_onset = int(crop_onset_sec * sample_rate)
             retry += 1
             if retry > 10:
                 break                
 
         crop_offset = min(crop_onset + self.max_wav_length, source_len)
+        crop_offset_sec = crop_onset_sec + self.max_sentence_length
         source = source[crop_onset:crop_offset]
+
+        # retrieving the transcript
+        offset_index = onset_index
+        last_bound = boundaries[offset_index][0][1]
+        while offset_index < len(boundaries) and last_bound < crop_offset_sec:
+            last_bound = boundaries[offset_index][0][1]
+            offset_index += 1
+
+
+        transcript = [bound[1].replace(",", " ") for bound in boundaries[onset_index:offset_index]]
+        transcript = " | ".join(transcript)
+        transcript += " |"
+
+        if self.process_label is not None:
+            transcript = self.process_label(transcript)
 
         # padding the audio
         padded_source = torch.zeros(self.max_wav_length)
@@ -261,6 +304,7 @@ class UnsupsegMandarinDataset(FairseqDataset):
             "source": padded_source,
             "padding_mask": padding_mask,
             "boundaries": boundaries,
+            "target": transcript
         }
 
     def __len__(self):
@@ -281,6 +325,11 @@ class UnsupsegMandarinDataset(FairseqDataset):
         padding_mask = torch.stack(padding_mask).squeeze()
         boundaries = [s["boundaries"] for s in samples]
         ids = torch.LongTensor([s["id"] for s in samples])
+        target = [s["target"] for s in samples]
+
+        target_lengths = torch.LongTensor([len(t) for t in target])
+        target = data_utils.collate_tokens(target, pad_idx=self.pad, left_pad=False)
+        ntokens = target_lengths.sum().item()
 
         net_input = {
             "source": sources,
@@ -290,6 +339,9 @@ class UnsupsegMandarinDataset(FairseqDataset):
         batch = {
             "id": ids,
             "net_input": net_input,
+            "target": target,
+            "target_lengths": target_lengths,
+            "ntokens": ntokens
         }
 
         return batch

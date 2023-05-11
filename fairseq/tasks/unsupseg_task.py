@@ -178,9 +178,14 @@ class UnsupsegTask(FairseqTask):
     def load_dataset(self, split: str, **kwargs) -> None:
         manifest = f"{self.cfg.data}/{split}.tsv"
         paths = [f"{self.get_label_dir()}/{split}.{l}" for l in self.cfg.labels]
+
+        process_label = LabelEncoder(self.target_dictionary)
+
         self.datasets[split] = UnsupsegMandarinDataset(
             manifest,
             sample_rate=self.cfg.sample_rate,
+            pad=self.target_dictionary.pad(),
+            process_label=process_label
         )
 
     def max_positions(self) -> Tuple[int, int]:
