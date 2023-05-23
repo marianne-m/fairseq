@@ -274,13 +274,20 @@ class UnsupsegMandarinDataset(FairseqDataset):
         crop_offset_sec = crop_onset_sec + self.max_sentence_length
         source = source[crop_onset:crop_offset]
 
-        # retrieving the transcript
+        # retrieving the transcript & creating a vector with 1 where word boundaries are
         offset_index = onset_index
         last_bound = boundaries[offset_index][0][1]
-        while offset_index < len(boundaries) and last_bound < crop_offset_sec:
-            last_bound = boundaries[offset_index][0][1]
-            offset_index += 1
 
+        word_boundaries = np.zeros(self.max_wav_length, dtype=int)
+        while offset_index < len(boundaries) and last_bound < crop_offset_sec:
+            last_bound_start, last_bound = boundaries[offset_index][0]
+
+            bound_index_start = int(last_bound_start * self.sample_rate) - crop_onset
+            bound_index_end = int(last_bound * self.sample_rate) - crop_onset
+            word_boundaries[max(bound_index_start - 1, 0): bound_index_start + 2] = 1
+            word_boundaries[max(bound_index_end - 1, 0): bound_index_end + 2] = 1
+
+            offset_index += 1
 
         transcript = [bound[1].replace(",", " ") for bound in boundaries[onset_index:offset_index]]
         transcript = " | ".join(transcript)
