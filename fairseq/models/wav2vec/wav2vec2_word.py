@@ -22,12 +22,13 @@ from fairseq.modules import LayerNorm
 from fairseq.tasks import FairseqTask
 from random import sample
 import numpy as np
+from typing import Optional
 
 
 @dataclass
 class Wav2Vec2WordConfig(Wav2Vec2Config):
-    ssl_checkpoint: str = field(
-        default=MISSING,
+    ssl_checkpoint: Optional[str] = field(
+        default=None,
         metadata={
             "help": "path to the cpc checkpoint"
         },
@@ -37,61 +38,64 @@ class Wav2Vec2WordConfig(Wav2Vec2Config):
 @register_model("wav2vec2_word", dataclass=Wav2Vec2WordConfig)
 class Wav2Vec2Word(Wav2Vec2Model):
     def __init__(self, cfg: Wav2Vec2WordConfig):
-        BaseFairseqModel.__init__(self)
+        if cfg.ssl_checkpoint is None:
+            Wav2Vec2Model.__init__(self, cfg)
+        else:
+            BaseFairseqModel.__init__(self)
 
-        ssl_model, ssl_cfg, ssl_task = checkpoint_utils.load_model_ensemble_and_task([cfg.ssl_checkpoint])
+            ssl_model, ssl_cfg, ssl_task = checkpoint_utils.load_model_ensemble_and_task([cfg.ssl_checkpoint])
 
-        self.cfg = cfg
+            self.cfg = cfg
 
-        feature_enc_layers = eval(cfg.conv_feature_layers)
-        self.embed = feature_enc_layers[-1][0]
+            feature_enc_layers = eval(cfg.conv_feature_layers)
+            self.embed = feature_enc_layers[-1][0]
 
-        self.feature_extractor = ssl_model[0].feature_extractor
-        self.post_extract_proj = ssl_model[0].post_extract_proj
-        self.crop_seq_to_multiple = cfg.crop_seq_to_multiple
+            self.feature_extractor = ssl_model[0].feature_extractor
+            self.post_extract_proj = ssl_model[0].post_extract_proj
+            self.crop_seq_to_multiple = cfg.crop_seq_to_multiple
 
-        self.mask_prob = cfg.mask_prob
-        self.mask_selection = cfg.mask_selection
-        self.mask_other = cfg.mask_other
-        self.mask_length = cfg.mask_length
-        self.no_mask_overlap = cfg.no_mask_overlap
-        self.mask_min_space = cfg.mask_min_space
+            self.mask_prob = cfg.mask_prob
+            self.mask_selection = cfg.mask_selection
+            self.mask_other = cfg.mask_other
+            self.mask_length = cfg.mask_length
+            self.no_mask_overlap = cfg.no_mask_overlap
+            self.mask_min_space = cfg.mask_min_space
 
-        self.mask_channel_prob = cfg.mask_channel_prob
-        self.mask_channel_before = cfg.mask_channel_before
-        self.mask_channel_selection = cfg.mask_channel_selection
-        self.mask_channel_other = cfg.mask_channel_other
-        self.mask_channel_length = cfg.mask_channel_length
-        self.no_mask_channel_overlap = cfg.no_mask_channel_overlap
-        self.mask_channel_min_space = cfg.mask_channel_min_space
+            self.mask_channel_prob = cfg.mask_channel_prob
+            self.mask_channel_before = cfg.mask_channel_before
+            self.mask_channel_selection = cfg.mask_channel_selection
+            self.mask_channel_other = cfg.mask_channel_other
+            self.mask_channel_length = cfg.mask_channel_length
+            self.no_mask_channel_overlap = cfg.no_mask_channel_overlap
+            self.mask_channel_min_space = cfg.mask_channel_min_space
 
-        self.dropout_input = ssl_model[0].dropout_input
-        self.dropout_features = ssl_model[0].dropout_input
+            self.dropout_input = ssl_model[0].dropout_input
+            self.dropout_features = ssl_model[0].dropout_input
 
-        self.feature_grad_mult = cfg.feature_grad_mult
+            self.feature_grad_mult = cfg.feature_grad_mult
 
-        self.quantizer = ssl_model[0].quantizer
-        self.input_quantizer = ssl_model[0].input_quantizer
+            self.quantizer = ssl_model[0].quantizer
+            self.input_quantizer = ssl_model[0].input_quantizer
 
-        self.n_negatives = cfg.num_negatives
-        self.cross_sample_negatives = cfg.cross_sample_negatives
-        self.codebook_negatives = cfg.codebook_negatives
-        self.negatives_from_everywhere = cfg.negatives_from_everywhere
+            self.n_negatives = cfg.num_negatives
+            self.cross_sample_negatives = cfg.cross_sample_negatives
+            self.codebook_negatives = cfg.codebook_negatives
+            self.negatives_from_everywhere = cfg.negatives_from_everywhere
 
-        self.logit_temp = cfg.logit_temp
+            self.logit_temp = cfg.logit_temp
 
-        self.project_q = ssl_model[0].project_q
+            self.project_q = ssl_model[0].project_q
 
-        cfg.quantize_input = cfg.quantize_input
-        self.input_quantizer = ssl_model[0].input_quantizer
-        if not cfg.quantize_input:
-            self.project_inp = ssl_model[0].input_quantizer
+            cfg.quantize_input = cfg.quantize_input
+            self.input_quantizer = ssl_model[0].input_quantizer
+            if not cfg.quantize_input:
+                self.project_inp = ssl_model[0].input_quantizer
 
-        self.mask_emb = ssl_model[0].mask_emb
-        self.encoder = ssl_model[0].encoder
-        self.layer_norm = ssl_model[0].layer_norm
-        self.target_glu = ssl_model[0].target_glu
-        self.final_proj = ssl_model[0].final_proj
+            self.mask_emb = ssl_model[0].mask_emb
+            self.encoder = ssl_model[0].encoder
+            self.layer_norm = ssl_model[0].layer_norm
+            self.target_glu = ssl_model[0].target_glu
+            self.final_proj = ssl_model[0].final_proj
 
 
     def forward(
@@ -291,6 +295,10 @@ class Wav2Vec2Word(Wav2Vec2Model):
         bsz, size, _ = shape
         mask = np.full((bsz, size), False)
         mask_idcs = [[]] * bsz
+
+        if type(boundaries[0][0][-1]) == str:
+            boundaries = [[time for time, _  in batch] for batch in boundaries]
+
         for batch_idx, b_boundaries in enumerate(boundaries):
             nb_of_masked_words = int(mask_prob*len(b_boundaries))
             masks = sample(b_boundaries, nb_of_masked_words)
@@ -298,11 +306,11 @@ class Wav2Vec2Word(Wav2Vec2Model):
             for start, stop in mask_indices:
                 mask_idcs[batch_idx].extend([i for i in range(start, stop)])
                 mask[batch_idx, start:stop] = True
-
-        # min_len = min([len(m) for m in mask_idcs])
-        # for i, mask_idc in enumerate(mask_idcs):
-        #     if len(mask_idc) > min_len:
-        #         mask_idc = np.random.choice(mask_idc, min_len, replace=False)
-        #     mask[i, mask_idc] = True
    
         return mask
+
+    def extract_features(self, source, padding_mask, mask=False, layer=None, boundaries=None):
+        res = self.forward(
+            source, padding_mask, mask=mask, features_only=True, layer=layer, boundaries=boundaries
+        )
+        return res
