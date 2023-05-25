@@ -33,6 +33,12 @@ class Wav2Vec2WordConfig(Wav2Vec2Config):
             "help": "path to the cpc checkpoint"
         },
     )
+    mask_prob_word: float = field(
+        default=0.15,
+        metadata={
+            "help": "proportion of masked words"
+        },
+    )
 
 
 @register_model("wav2vec2_word", dataclass=Wav2Vec2WordConfig)
@@ -46,6 +52,7 @@ class Wav2Vec2Word(Wav2Vec2Model):
             ssl_model, ssl_cfg, ssl_task = checkpoint_utils.load_model_ensemble_and_task([cfg.ssl_checkpoint])
 
             self.cfg = cfg
+            self.mask_prob = cfg.mask_prob_word
 
             feature_enc_layers = eval(cfg.conv_feature_layers)
             self.embed = feature_enc_layers[-1][0]
@@ -289,8 +296,7 @@ class Wav2Vec2Word(Wav2Vec2Model):
     def compute_mask_indices_with_word_boundaries(
         self,
         shape: tuple,
-        boundaries: List,
-        mask_prob = 0.15
+        boundaries: List
     ):
         bsz, size, _ = shape
         mask = np.full((bsz, size), False)
@@ -300,7 +306,7 @@ class Wav2Vec2Word(Wav2Vec2Model):
             boundaries = [[time for time, _  in batch] for batch in boundaries]
 
         for batch_idx, b_boundaries in enumerate(boundaries):
-            nb_of_masked_words = int(mask_prob*len(b_boundaries))
+            nb_of_masked_words = int(self.mask_prob*len(b_boundaries))
             masks = sample(b_boundaries, nb_of_masked_words)
             mask_indices = [[int(time/0.020) for time in mask] for mask in masks]
             for start, stop in mask_indices:
