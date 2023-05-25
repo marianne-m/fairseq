@@ -177,6 +177,10 @@ class Wav2Vec2AsrConfig(FairseqDataclass):
 
     layer_decay: float = 1
 
+    word_boundaries: bool = field(
+        default=False,
+        metadata={"help": "mask words using word boundaries in the finetuning"},
+    )
 
 @dataclass
 class Wav2Vec2CtcConfig(Wav2Vec2AsrConfig):
@@ -395,6 +399,9 @@ class Wav2VecEncoder(FairseqEncoder):
             w2v_args.criterion = None
             w2v_args.lr_scheduler = None
 
+            if cfg.word_boundaries:
+                w2v_args.model._name = "wav2vec2_word"
+
             cfg.w2v_args = w2v_args
 
             logger.info(w2v_args)
@@ -553,6 +560,9 @@ class Wav2VecEncoder(FairseqEncoder):
             "padding_mask": padding_mask,
             "mask": self.apply_mask and self.training,
         }
+
+        if "boundaries" in kwargs:
+            w2v_args["boundaries"] = kwargs["boundaries"]
 
         if self.is_d2v_multi:
             w2v_args["mode"] = "AUDIO"
