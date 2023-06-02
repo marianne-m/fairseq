@@ -399,7 +399,9 @@ class Wav2VecEncoder(FairseqEncoder):
             w2v_args.criterion = None
             w2v_args.lr_scheduler = None
 
+            self.word_boundaries = False
             if cfg.word_boundaries:
+                self.word_boundaries = True
                 w2v_args.model._name = "wav2vec2_word"
 
             cfg.w2v_args = w2v_args
@@ -561,7 +563,7 @@ class Wav2VecEncoder(FairseqEncoder):
             "mask": self.apply_mask and self.training,
         }
 
-        if "boundaries" in kwargs:
+        if "boundaries" in kwargs and self.word_boundaries:
             w2v_args["boundaries"] = kwargs["boundaries"]
 
         if self.is_d2v_multi:
