@@ -112,6 +112,12 @@ class UnsupsegConfig(FairseqDataclass):
         default=False,
         metadata={"help": "pad audio to the longest one in the batch if true"},
     )
+    mandarin: bool = field(
+        default=True,
+        metadata={
+            "help": "set true if you finetune on Mandarin"
+        }
+    )
 
 
 @register_task("unsupseg", dataclass=UnsupsegConfig)
@@ -140,6 +146,7 @@ class UnsupsegTask(FairseqTask):
             self.state.add_factory("dictionaries", self.load_dictionaries)
 
         self.blank_symbol = "<s>"
+        self.mandarin = cfg.mandarin
 
     @property
     def source_dictionary(self) -> Optional[Dictionary]:
@@ -181,12 +188,20 @@ class UnsupsegTask(FairseqTask):
 
         process_label = LabelEncoder(self.target_dictionary)
 
-        self.datasets[split] = UnsupsegMandarinDataset(
-            manifest,
-            sample_rate=self.cfg.sample_rate,
-            pad=self.target_dictionary.pad(),
-            process_label=process_label
-        )
+        if self.mandarin:
+            self.datasets[split] = UnsupsegMandarinDataset(
+                manifest,
+                sample_rate=self.cfg.sample_rate,
+                pad=self.target_dictionary.pad(),
+                process_label=process_label
+            )
+        else:
+            self.datasets[split] = UnsupsegDataset(
+                manifest,
+                sample_rate=self.cfg.sample_rate,
+                pad=self.target_dictionary.pad(),
+                process_label=process_label
+            )
 
     def max_positions(self) -> Tuple[int, int]:
         return (sys.maxsize, sys.maxsize)
