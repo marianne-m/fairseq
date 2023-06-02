@@ -113,7 +113,7 @@ class UnsupsegConfig(FairseqDataclass):
         metadata={"help": "pad audio to the longest one in the batch if true"},
     )
     mandarin: bool = field(
-        default=True,
+        default=False,
         metadata={
             "help": "set true if you finetune on Mandarin"
         }
