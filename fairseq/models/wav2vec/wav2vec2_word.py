@@ -302,8 +302,8 @@ class Wav2Vec2Word(Wav2Vec2Model):
         mask = np.full((bsz, size), False)
         mask_idcs = [[]] * bsz
 
-        if type(boundaries[0][0][-1]) == str:
-            boundaries = [[time for time, _  in batch] for batch in boundaries]
+        # if type(boundaries[0][0][-1]) == str:
+        #     boundaries = [[time for time, _  in batch] for batch in boundaries]
 
         for batch_idx, b_boundaries in enumerate(boundaries):
             nb_of_masked_words = int(self.mask_prob_word*len(b_boundaries))
