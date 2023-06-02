@@ -293,6 +293,8 @@ class UnsupsegMandarinDataset(FairseqDataset):
         transcript = " | ".join(transcript)
         transcript += " |"
 
+        boundaries = [bound[0] for bound in boundaries[onset_index:offset_index]]
+
         if self.process_label is not None:
             transcript = self.process_label(transcript)
 
