@@ -111,7 +111,7 @@ def load_sentences_and_km_labels(
     return paths
 
 
-class UnsupsegDataset(FairseqDataset):
+class UnsupsegDatasetKmeans(FairseqDataset):
     """
     UnsupsegDataset to read Hubert kmeans labels and boundaries labels
     """
@@ -214,6 +214,120 @@ class UnsupsegDataset(FairseqDataset):
 
     def ordered_indices(self):
         return np.random.permutation(len(self))
+
+class UnsupsegDataset(FairseqDataset):
+    """
+    This dataset can be used to finetune Wav2Vec2 for ASR and loads word boundaries labels
+    """
+    def __init__(
+        self,
+        manifest_path: str,  # file with path to word embeddings npz
+        sample_rate: float,
+        pad,
+        max_sentence_length: int = 20,  # seconds
+        process_label = None,
+    ):
+        self.max_sentence_length = max_sentence_length
+        self.sample_rate = sample_rate
+        self.max_wav_length = self.max_sentence_length * self.sample_rate
+
+        logger.info('Reading boundaries')
+        dir_manifest_path = os.path.dirname(manifest_path)
+        subset = os.path.basename(manifest_path)
+        bound_manifest_path = os.path.join(dir_manifest_path, 'bound_'+subset)
+        self.boundaries = load_boundaries_and_transcript(bound_manifest_path)
+
+        logger.info('Reading sentences')
+        self.paths = load_sentences(manifest_path, self.boundaries)
+        self.src_info = {"rate": self.sample_rate}
+        self.target_info = {"channels": 1, "length": 0, "rate": self.sample_rate}
+        self.len_data = len(self.paths)
+
+        self.process_label = process_label
+        self.pad = pad
+
+    def __getitem__(self, index):
+        path, sid, _ = self.paths[index]
+
+        boundaries = self.boundaries[sid]
+        source, sample_rate = torchaudio.load(path)
+        assert sample_rate == self.sample_rate, sample_rate
+
+        # padding the audio
+        source = source.flatten()
+        source = source[:int(self.max_wav_length)]
+        padded_source = torch.zeros(self.max_wav_length)
+        padded_source[:len(source)] = source
+        padded_source = padded_source.reshape(1, -1)
+
+        # padding mask
+        padding_mask = torch.BoolTensor(self.max_wav_length)
+        padding_mask[:len(source)] = False
+
+        # finding the transcript
+        transcript = np.array([bound[1] for bound in boundaries])
+        boundaries = np.array([bound[0] for bound in boundaries])
+        transcript = transcript[(boundaries[:,0]) < self.max_sentence_length]
+        transcript = [" ".join(word).upper() for word in transcript if word != 'SIL']
+        boundaries = boundaries[boundaries[:,0] < self.max_sentence_length]
+        transcript = " | ".join(transcript) + " |"
+
+        if self.process_label is not None:
+            transcript = self.process_label(transcript)
+
+        return {
+            "id": index,
+            "source": padded_source,
+            "padding_mask": padding_mask,
+            "boundaries": boundaries.tolist(),
+            # "boundaries_vector": word_boundaries,
+            "target": transcript
+        }
+
+    def __len__(self):
+        # nb de fois où getitem est appelée dans une epoch
+        return len(self.paths)
+
+    def crop_to_max_size(self, wav, target_size):
+        return wav, 0
+
+    def collater(self, samples):
+        samples = [s for s in samples if s["source"] is not None]
+        if len(samples) == 0:
+            return {}
+
+        sources = ([s["source"] for s in samples]) # = audios
+        sources = torch.stack(sources).squeeze()
+        padding_mask = ([s["padding_mask"] for s in samples])
+        padding_mask = torch.stack(padding_mask).squeeze()
+        boundaries = [s["boundaries"] for s in samples]
+        ids = torch.LongTensor([s["id"] for s in samples])
+        target = [s["target"] for s in samples]
+
+        target_lengths = torch.LongTensor([len(t) for t in target])
+        target = data_utils.collate_tokens(target, pad_idx=self.pad, left_pad=False)
+        ntokens = target_lengths.sum().item()
+
+        net_input = {
+            "source": sources,
+            "boundaries": boundaries,
+            "padding_mask": padding_mask
+        }
+        batch = {
+            "id": ids,
+            "net_input": net_input,
+            "target": target,
+            "target_lengths": target_lengths,
+            "ntokens": ntokens
+        }
+
+        return batch
+
+    def num_tokens(self, index):
+        return self.size(index)
+
+    def size(self, index):
+        return self.sample_rate * self.max_sentence_length
 
 
 class UnsupsegMandarinDataset(FairseqDataset):
