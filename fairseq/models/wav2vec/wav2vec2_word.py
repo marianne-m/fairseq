@@ -33,12 +33,6 @@ class Wav2Vec2WordConfig(Wav2Vec2Config):
             "help": "path to the cpc checkpoint"
         },
     )
-    mask_prob_word: float = field(
-        default=0.15,
-        metadata={
-            "help": "proportion of masked words"
-        },
-    )
 
 
 @register_model("wav2vec2_word", dataclass=Wav2Vec2WordConfig)
@@ -302,9 +296,6 @@ class Wav2Vec2Word(Wav2Vec2Model):
         mask = np.full((bsz, size), False)
         mask_idcs = [[]] * bsz
 
-        # if type(boundaries[0][0][-1]) == str:
-        #     boundaries = [[time for time, _  in batch] for batch in boundaries]
-
         for batch_idx, b_boundaries in enumerate(boundaries):
             nb_of_masked_words = int(self.mask_prob_word*len(b_boundaries))
             masks = sample(b_boundaries, nb_of_masked_words)
@@ -312,7 +303,7 @@ class Wav2Vec2Word(Wav2Vec2Model):
             for start, stop in mask_indices:
                 mask_idcs[batch_idx].extend([i for i in range(start, stop)])
                 mask[batch_idx, start:stop] = True
-   
+
         return mask
 
     def extract_features(self, source, padding_mask, mask=False, layer=None, boundaries=None):

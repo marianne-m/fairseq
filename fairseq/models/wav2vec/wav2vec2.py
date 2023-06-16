@@ -214,6 +214,12 @@ class Wav2Vec2Config(FairseqDataclass):
         default=1,
         metadata={"help": "min space between spans (if no overlap is enabled)"},
     )
+    mask_prob_word: float = field(
+        default=0.15,
+        metadata={
+            "help": "proportion of masked words"
+        },
+    )
 
     # negative selection
     num_negatives: int = field(

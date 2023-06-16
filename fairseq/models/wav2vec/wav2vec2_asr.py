@@ -109,6 +109,12 @@ class Wav2Vec2AsrConfig(FairseqDataclass):
         default=0.0,
         metadata={"help": "percent of masks to unmask for each sample"},
     )
+    mask_prob_word: float = field(
+        default=0.15,
+        metadata={
+            "help": "proportion of masked words"
+        },
+    )
 
     # channel masking
     mask_channel_length: int = field(
@@ -404,6 +410,7 @@ class Wav2VecEncoder(FairseqEncoder):
             if cfg.word_boundaries:
                 self.word_boundaries = True
                 w2v_args.model._name = "wav2vec2_word"
+                w2v_args.model.mask_prob_word = cfg.mask_prob_word
 
             cfg.w2v_args = w2v_args
 
@@ -591,6 +598,8 @@ class Wav2VecEncoder(FairseqEncoder):
         # find the "|" symbol
             spaces = x[: , : ,self.space_index] # B x T
             spaces = torch.sigmoid(spaces)
+        else:
+            spaces = None
 
         return {
             "encoder_out": x,  # T x B x C
