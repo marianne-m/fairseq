@@ -65,6 +65,13 @@ class CtcCriterionConfig(FairseqDataclass):
         },
     )
 
+    use_mixed_loss: bool = field(
+        default=False,
+        metadata={
+            "help": "Use a BCE loss for | caracter and add CTC and BCE losses"
+        }
+    )
+
 
 @register_criterion("ctc", dataclass=CtcCriterionConfig)
 class CtcCriterion(FairseqCriterion):
@@ -80,6 +87,7 @@ class CtcCriterion(FairseqCriterion):
         self.pad_idx = task.target_dictionary.pad()
         self.eos_idx = task.target_dictionary.eos()
         self.post_process = cfg.post_process
+        self.mixed_loss = cfg.use_mixed_loss
 
         self.rdrop_alpha = rdrop_alpha
 
@@ -161,7 +169,7 @@ class CtcCriterion(FairseqCriterion):
             target_lengths = pad_mask.sum(-1)
 
         with torch.backends.cudnn.flags(enabled=False):
-            loss = F.ctc_loss(
+            loss_ctc = F.ctc_loss(
                 lprobs,
                 targets_flat,
                 input_lengths,
@@ -171,14 +179,15 @@ class CtcCriterion(FairseqCriterion):
                 zero_infinity=self.zero_infinity,
             )
         
-        # add BCE for word boundaries
-        # add option to BCE
-        loss_wb = F.binary_cross_entropy(
-            net_output["boundaries_predictions"],
-            sample["boundaries_vector"].transpose(0,1)
-        )
-        loss_ctc = loss
-        loss = loss_ctc + loss_wb
+        if self.mixed_loss:
+            # add BCE for word boundaries
+            loss_wb = F.binary_cross_entropy(
+                net_output["boundaries_predictions"],
+                sample["boundaries_vector"].transpose(0,1)
+            )
+            loss = loss_ctc + loss_wb
+        else:
+            loss = loss_ctc
         
         ntokens = (
             sample["ntokens"] if "ntokens" in sample else target_lengths.sum().item()
@@ -186,13 +195,15 @@ class CtcCriterion(FairseqCriterion):
 
         sample_size = sample["target"].size(0) if self.sentence_avg else ntokens
         logging_output = {
-            "loss_ctc": utils.item(loss_ctc),  # * sample['ntokens'],
-            "loss_wb": utils.item(loss_wb),
             "loss": utils.item(loss),
             "ntokens": ntokens,
             "nsentences": sample["id"].numel(),
             "sample_size": sample_size,
         }
+
+        if self.mixed_loss:
+            logging_output["loss_ctc"] = utils.item(loss_ctc)
+            logging_output["loss_wb"] = utils.item(loss_wb)
 
         if not model.training:
             import editdistance
