@@ -204,7 +204,8 @@ class Wav2VecCtc(BaseFairseqModel):
     @classmethod
     def build_model(cls, cfg: Wav2Vec2CtcConfig, task: FairseqTask):
         """Build a new model instance."""
-        w2v_encoder = Wav2VecEncoder(cfg, len(task.target_dictionary))
+        space_index = task.target_dictionary.index("|") if "|" in task.target_dictionary else None
+        w2v_encoder = Wav2VecEncoder(cfg, len(task.target_dictionary), space_index)
         return cls(cfg, w2v_encoder)
 
     def get_logits(self, net_output, normalize=False):
@@ -350,7 +351,7 @@ class Wav2Vec2Seq2SeqModel(FairseqEncoderDecoderModel):
 
 
 class Wav2VecEncoder(FairseqEncoder):
-    def __init__(self, cfg: Wav2Vec2AsrConfig, output_size=None):
+    def __init__(self, cfg: Wav2Vec2AsrConfig, output_size=None, space_index=None):
         self.apply_mask = cfg.apply_mask
 
         arg_overrides = {
@@ -477,6 +478,8 @@ class Wav2VecEncoder(FairseqEncoder):
         if targ_d is not None:
             self.proj = Linear(d, targ_d)
 
+        if space_index is not None:
+            self.space_index = space_index
         layer_decay = getattr(cfg, "layer_decay", 1)
         if layer_decay < 1:
             mod_encs = list(model.modality_encoders.values())
@@ -585,10 +588,15 @@ class Wav2VecEncoder(FairseqEncoder):
         if self.proj:
             x = self.proj(x)
 
+        # find the "|" symbol
+            spaces = x[: , : ,self.space_index] # B x T
+            spaces = torch.sigmoid(spaces)
+
         return {
             "encoder_out": x,  # T x B x C
             "padding_mask": padding_mask,  # B x T,
             "layer_results": res["layer_results"],
+            "boundaries_predictions": spaces
         }
 
     def forward_torchscript(self, net_input):

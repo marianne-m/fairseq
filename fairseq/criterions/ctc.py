@@ -170,14 +170,25 @@ class CtcCriterion(FairseqCriterion):
                 reduction="sum",
                 zero_infinity=self.zero_infinity,
             )
-
+        
+        # add BCE for word boundaries
+        # add option to BCE
+        loss_wb = F.binary_cross_entropy(
+            net_output["boundaries_predictions"],
+            sample["boundaries_vector"].transpose(0,1)
+        )
+        loss_ctc = loss
+        loss = loss_ctc + loss_wb
+        
         ntokens = (
             sample["ntokens"] if "ntokens" in sample else target_lengths.sum().item()
         )
 
         sample_size = sample["target"].size(0) if self.sentence_avg else ntokens
         logging_output = {
-            "loss": utils.item(loss.data),  # * sample['ntokens'],
+            "loss_ctc": utils.item(loss_ctc),  # * sample['ntokens'],
+            "loss_wb": utils.item(loss_wb),
+            "loss": utils.item(loss),
             "ntokens": ntokens,
             "nsentences": sample["id"].numel(),
             "sample_size": sample_size,
