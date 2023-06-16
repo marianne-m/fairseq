@@ -121,6 +121,8 @@ class UnsupsegDatasetKmeans(FairseqDataset):
         sample_rate: float,
         label_path: str,
         label_rate: float,
+        pad,
+        process_label = None,
         max_sentence_length: int = 20,  # seconds
     ):
         self.max_sentence_length = max_sentence_length
@@ -139,6 +141,9 @@ class UnsupsegDatasetKmeans(FairseqDataset):
         self.paths = load_sentences_and_km_labels(manifest_path, label_path, self.boundaries)
         self.src_info = {"rate": self.sample_rate}
         self.target_info = {"channels": 1, "length": 0, "rate": self.sample_rate}
+
+        self.process_label = process_label
+        self.pad = pad
 
     def __getitem__(self, index):
         path, sid, _, labels = self.paths[index]
@@ -341,6 +346,7 @@ class UnsupsegMandarinDataset(FairseqDataset):
         pad,
         max_sentence_length: int = 20,  # seconds
         process_label = None,
+        features_gap = 0.02
     ):
         self.max_sentence_length = max_sentence_length
         self.sample_rate = sample_rate
@@ -360,6 +366,7 @@ class UnsupsegMandarinDataset(FairseqDataset):
 
         self.process_label = process_label
         self.pad = pad
+        self.features_gap = features_gap
 
     def __getitem__(self, index):
         index = np.random.randint(self.len_data)
@@ -392,12 +399,12 @@ class UnsupsegMandarinDataset(FairseqDataset):
         offset_index = onset_index
         last_bound = boundaries[offset_index][0][1]
 
-        word_boundaries = np.zeros(self.max_wav_length, dtype=int)
+        word_boundaries = torch.zeros(int(self.max_sentence_length / self.features_gap - 1), dtype=torch.float16)
         while offset_index < len(boundaries) and last_bound < crop_offset_sec:
             last_bound_start, last_bound = boundaries[offset_index][0]
 
-            bound_index_start = int(last_bound_start * self.sample_rate) - crop_onset
-            bound_index_end = int(last_bound * self.sample_rate) - crop_onset
+            bound_index_start = int((last_bound_start - crop_onset_sec) / self.features_gap)
+            bound_index_end = int((last_bound - crop_onset_sec) / self.features_gap)
             word_boundaries[max(bound_index_start - 1, 0): bound_index_start + 2] = 1
             word_boundaries[max(bound_index_end - 1, 0): bound_index_end + 2] = 1
 
@@ -428,6 +435,7 @@ class UnsupsegMandarinDataset(FairseqDataset):
             "source": padded_source,
             "padding_mask": padding_mask,
             "boundaries": boundaries,
+            "boundaries_vector": word_boundaries,
             "target": transcript
         }
 
@@ -448,6 +456,7 @@ class UnsupsegMandarinDataset(FairseqDataset):
         padding_mask = ([s["padding_mask"] for s in samples])
         padding_mask = torch.stack(padding_mask).squeeze()
         boundaries = [s["boundaries"] for s in samples]
+        boundaries_vect = torch.stack([s["boundaries_vector"] for s in samples])
         ids = torch.LongTensor([s["id"] for s in samples])
         target = [s["target"] for s in samples]
 
@@ -465,7 +474,8 @@ class UnsupsegMandarinDataset(FairseqDataset):
             "net_input": net_input,
             "target": target,
             "target_lengths": target_lengths,
-            "ntokens": ntokens
+            "ntokens": ntokens,
+            "boundaries_vector": boundaries_vect
         }
 
         return batch
