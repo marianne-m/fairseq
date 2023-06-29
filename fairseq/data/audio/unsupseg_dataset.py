@@ -316,6 +316,7 @@ class UnsupsegDataset(FairseqDataset):
         padding_mask = ([s["padding_mask"] for s in samples])
         padding_mask = torch.stack(padding_mask).squeeze()
         boundaries = [s["boundaries"] for s in samples]
+        boundaries_vect = torch.stack([s["boundaries_vector"] for s in samples])
         ids = torch.LongTensor([s["id"] for s in samples])
         target = [s["target"] for s in samples]
 
@@ -333,7 +334,8 @@ class UnsupsegDataset(FairseqDataset):
             "net_input": net_input,
             "target": target,
             "target_lengths": target_lengths,
-            "ntokens": ntokens
+            "ntokens": ntokens,
+            "boundaries_vector": boundaries_vect
         }
 
         return batch
