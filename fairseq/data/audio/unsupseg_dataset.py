@@ -231,7 +231,8 @@ class UnsupsegDataset(FairseqDataset):
         pad,
         max_sentence_length: int = 20,  # seconds
         process_label = None,
-        features_gap = 0.02
+        features_gap = 0.02,
+        wb_size: int = 3
     ):
         self.max_sentence_length = max_sentence_length
         self.sample_rate = sample_rate
@@ -252,6 +253,7 @@ class UnsupsegDataset(FairseqDataset):
         self.process_label = process_label
         self.pad = pad
         self.features_gap = features_gap
+        self.wb_size = wb_size
 
     def __getitem__(self, index):
         path, sid, _ = self.paths[index]
@@ -283,12 +285,19 @@ class UnsupsegDataset(FairseqDataset):
             transcript = self.process_label(transcript)
         
         # creating the boundaries vector
-        boundaries_vector = torch.zeros(int(self.max_sentence_length / self.features_gap - 1), dtype=torch.float16)
+        boundaries_vector = torch.zeros(int(self.max_sentence_length / self.features_gap - 1), dtype=torch.float32)
         for start, end in boundaries:
             start_index = int(start / self.features_gap)
             end_index = int(end / self.features_gap)
-            boundaries_vector[max(start_index - 1, 0): start_index + 2] = 1
-            boundaries_vector[max(end_index - 1, 0): end_index + 2] = 1
+            if self.wb_size == 3:
+                boundaries_vector[max(start_index - 1, 0): start_index + 2] = 1
+                boundaries_vector[max(end_index - 1, 0): end_index + 2] = 1
+            elif self.wb_size == 2:
+                boundaries_vector[max(start_index - 1, 0): start_index + 1] = 1
+                boundaries_vector[max(end_index - 1, 0): end_index + 1] = 1
+            elif self.wb_size == 1:
+                boundaries_vector[start_index] = 1
+                boundaries_vector[end_index] = 1
 
         return {
             "id": index,

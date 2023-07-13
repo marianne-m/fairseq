@@ -118,6 +118,12 @@ class UnsupsegConfig(FairseqDataclass):
             "help": "set true if you finetune on Mandarin"
         }
     )
+    wb_size: int = field(
+        default=3,
+        metadata={
+            "help": "number of frames that reprensent a word boundary"
+        }
+    )
 
 
 @register_task("unsupseg", dataclass=UnsupsegConfig)
@@ -200,7 +206,8 @@ class UnsupsegTask(FairseqTask):
                 manifest,
                 sample_rate=self.cfg.sample_rate,
                 pad=self.target_dictionary.pad(),
-                process_label=process_label
+                process_label=process_label,
+                wb_size=self.cfg.wb_size
             )
 
     def max_positions(self) -> Tuple[int, int]:
